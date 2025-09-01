@@ -1,0 +1,433 @@
+{
+  "name": "Customer Support Knowledge Agent (OpenRouter)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "support-agent",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "id": "Webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const q = (item.json?.question ?? '').toString().trim();\n  const modeRaw = (\n    ($json?.mode ?? $query?.mode ?? $env.RETRIEVAL_MODE || 'bm25')\n      .toString()\n      .trim()\n      .toLowerCase()\n  );\n  if (!q || q.length < 4) {\n    out.push({\n      json: {\n        valid: false,\n        error: true,\n        message:\n          \"Invalid input: body must include non-empty 'question' (min 4 chars).\",\n      },\n    });\n  } else {\n    const mode = modeRaw === 'emb' ? 'emb' : 'bm25';\n    out.push({ json: { valid: true, error: false, question: q, mode } });\n  }\n}\n\nreturn out;\n"
+      },
+      "id": "Validate Input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.valid}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "IF Valid?",
+      "name": "IF Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [760, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$env.OPEN_KB_JSON_URL || ''}}",
+              "operation": "notEqual",
+              "value2": ""
+            }
+          ]
+        }
+      },
+      "id": "IF Has KB URL?",
+      "name": "IF Has KB URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1020, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.OPEN_KB_JSON_URL}}",
+        "responseFormat": "json"
+      },
+      "id": "Load KB JSON",
+      "name": "Load KB JSON",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1260, 160]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "return [\n  {\n    json: [\n      {\n        id: 'KB001',\n        title: 'Password Reset',\n        content:\n          \"To reset your account password, click 'Forgot Password' on the login page, enter your registered email address, and follow the instructions in the reset email.\",\n      },\n      {\n        id: 'KB002',\n        title: 'Change Billing Address',\n        content:\n          \"Log in to your account, go to 'Account Settings' > 'Billing', and click 'Edit Billing Address'. Save changes before exiting.\",\n      },\n      {\n        id: 'KB003',\n        title: 'Cancel Subscription',\n        content:\n          \"To cancel your subscription, go to 'Account Settings' > 'Subscription', select 'Cancel Subscription', and confirm the cancellation. Your subscription will remain active until the end of the billing cycle.\",\n      },\n      {\n        id: 'KB004',\n        title: 'Refund Policy',\n        content:\n          'We offer a 30-day money-back guarantee on all annual subscriptions. Refunds are processed within 5-7 business days after approval.',\n      },\n      {\n        id: 'KB005',\n        title: 'Two-Factor Authentication',\n        content:\n          \"Enable 2FA by navigating to 'Account Settings' > 'Security', clicking 'Enable Two-Factor Authentication', and scanning the QR code with an authenticator app.\",\n      },\n    ],\n  },\n];\n"
+      },
+      "id": "Embedded KB",
+      "name": "Embedded KB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "let kb = [];\nconst item = $input.item(0);\n\nif (Array.isArray(item.json)) {\n  kb = item.json;\n} else if (Array.isArray(item.json?.kb)) {\n  kb = item.json.kb;\n} else if (Array.isArray(item.json?.data)) {\n  kb = item.json.data;\n} else {\n  kb = [\n    {\n      id: 'KB001',\n      title: 'Password Reset',\n      content:\n        \"To reset your account password, click 'Forgot Password' on the login page, enter your registered email address, and follow the instructions in the reset email.\",\n    },\n    {\n      id: 'KB002',\n      title: 'Change Billing Address',\n      content:\n        \"Log in to your account, go to 'Account Settings' > 'Billing', and click 'Edit Billing Address'. Save changes before exiting.\",\n    },\n    {\n      id: 'KB003',\n      title: 'Cancel Subscription',\n      content:\n        \"To cancel your subscription, go to 'Account Settings' > 'Subscription', select 'Cancel Subscription', and confirm the cancellation. Your subscription will remain active until the end of the billing cycle.\",\n    },\n    {\n      id: 'KB004',\n      title: 'Refund Policy',\n      content:\n        'We offer a 30-day money-back guarantee on all annual subscriptions. Refunds are processed within 5-7 business days after approval.',\n    },\n    {\n      id: 'KB005',\n      title: 'Two-Factor Authentication',\n      content:\n        \"Enable 2FA by navigating to 'Account Settings' > 'Security', clicking 'Enable Two-Factor Authentication', and scanning the QR code with an authenticator app.\",\n    },\n  ];\n}\n\nif (!kb.length) {\n  throw new Error('Knowledge base is empty or failed to load.');\n}\n\nconst seen = new Set();\nkb = kb\n  .filter((r) => r && r.id && r.content)\n  .filter((r) => {\n    const k = String(r.id).trim();\n    if (seen.has(k)) return false;\n    seen.add(k);\n    return true;\n  })\n  .map((r) => ({\n    id: String(r.id).trim(),\n    title: String(r.title || '').trim(),\n    content: String(r.content || '').trim(),\n  }));\n\nreturn [{ json: { kb } }];\n"
+      },
+      "id": "Normalize KB",
+      "name": "Normalize KB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 260]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "Merge Q+KB",
+      "name": "Merge Q+KB",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1700, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.mode}}",
+              "operation": "equal",
+              "value2": "emb"
+            }
+          ]
+        }
+      },
+      "id": "IF Embeddings?",
+      "name": "IF Embeddings?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1920, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "function tokenize(text) {\n  return text\n    .toLowerCase()\n    .replace(/[^a-z0-9\\s>\\/'/]/g, ' ')\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter((t) => !STOP.has(t));\n}\n\nconst STOP = new Set([\n  'a','an','the','and','or','but','if','then','than','so','to','of','in','on','for','with','as','by','is','are','was','were','be','been','at','it','this','that','these','those','we','you','your','our','i'\n]);\n\nconst question = $json.question;\nconst kb = $json.kb;\nconst mode = $json.mode || 'bm25';\n\nconst k1 = 1.5;\nconst b = 0.75;\n\nconst docs = kb.map((d) => ({\n  id: d.id,\n  title: d.title,\n  content: d.content,\n  tokens: tokenize(`${d.title} ${d.content}`),\n}));\nconst N = docs.length;\nconst docLens = docs.map((d) => d.tokens.length);\nconst avgdl = docLens.reduce((a, b) => a + b, 0) / Math.max(N, 1);\n\nconst df = new Map();\nfor (const d of docs) {\n  const uniq = new Set(d.tokens);\n  for (const t of uniq) df.set(t, (df.get(t) || 0) + 1);\n}\n\nconst idf = new Map();\nfor (const [t, n_i] of df.entries()) {\n  const val = Math.log((N - n_i + 0.5) / (n_i + 0.5) + 1);\n  idf.set(t, val);\n}\n\nfor (const d of docs) {\n  const tf = new Map();\n  for (const t of d.tokens) tf.set(t, (tf.get(t) || 0) + 1);\n  d.tf = tf;\n}\n\nconst qTokens = tokenize(question);\nconst scores = docs.map((d, idx) => {\n  let s = 0;\n  for (const t of qTokens) {\n    const f = d.tf.get(t) || 0;\n    if (f === 0) continue;\n    const idf_t = idf.get(t) || 0;\n    const denom = f + k1 * (1 - b + (b * docLens[idx]) / avgdl);\n    s += idf_t * ((f * (k1 + 1)) / Math.max(denom, 1e-9));\n  }\n  return { d, score: s };\n});\n\nconst maxScore = Math.max(...scores.map((s) => s.score), 0);\nconst minScore = Math.min(...scores.map((s) => s.score), 0);\nconst norm = scores\n  .map((s) => ({\n    ...s,\n    norm: maxScore === minScore ? 0 : (s.score - minScore) / (maxScore - minScore),\n  }))\n  .sort((a, b) => b.norm - a.norm);\n\nconst top_k = Math.min(parseInt($env.TOP_K || '3', 10), kb.length);\nconst selected = norm.slice(0, top_k).filter((x) => x.norm > 0);\nconst retrieval_conf = selected.length ? selected[0].norm : 0;\n\nreturn [\n  {\n    json: {\n      question,\n      mode,\n      retrieval: {\n        method: 'bm25',\n        top_k,\n        selected: selected.map((x) => ({\n          id: x.d.id,\n          title: x.d.title,\n          content: x.d.content,\n          score: x.norm,\n        })),\n        retrieval_conf,\n      },\n    },\n  },\n];\n"
+      },
+      "id": "BM25 Rank",
+      "name": "BM25 Rank",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2140, 520]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const kb = $json.kb;\nconst question = $json.question;\nreturn [\n  {\n    json: {\n      question,\n      mode: 'emb',\n      texts: kb.map((d) => `${d.title}\\n\\n${d.content}`),\n      meta: kb.map((d) => ({ id: d.id, title: d.title })),\n    },\n  },\n];\n"
+      },
+      "id": "Prepare Embeddings",
+      "name": "Prepare Embeddings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2140, 260]
+    },
+    {
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "method": "POST",
+        "jsonParameters": true,
+        "responseFormat": "json",
+        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.OPENROUTER_API_KEY}}\",\n  \"Content-Type\": \"application/json\"\n}",
+        "bodyParametersJson": "={\n  \"model\": \"openai/text-embedding-3-small\",\n  \"input\": {{$json.texts}}\n}"
+      },
+      "id": "Doc Embeddings",
+      "name": "Doc Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2360, 160]
+    },
+    {
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "method": "POST",
+        "jsonParameters": true,
+        "responseFormat": "json",
+        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.OPENROUTER_API_KEY}}\",\n  \"Content-Type\": \"application/json\"\n}",
+        "bodyParametersJson": "={\n  \"model\": \"openai/text-embedding-3-small\",\n  \"input\": {{$json.question}}\n}"
+      },
+      "id": "Query Embedding",
+      "name": "Query Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2360, 360]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "Merge Doc + Meta",
+      "name": "Merge Doc + Meta",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [2580, 260]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const data = $json.data || [];\nreturn [\n  {\n    json: {\n      doc_embeddings: data.map((d) => d.embedding),\n      texts: $json.texts,\n      meta: $json.meta,\n      question: $json.question,\n      mode: $json.mode,\n    },\n  },\n];\n"
+      },
+      "id": "Wrap Doc+Meta",
+      "name": "Wrap Doc+Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2800, 260]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const data = $json.data || [];\nconst q = Array.isArray(data) && data[0] && Array.isArray(data[0].embedding)\n  ? data[0].embedding\n  : null;\nreturn [{ json: { query_embedding: q } }];\n"
+      },
+      "id": "Wrap Query Embedding",
+      "name": "Wrap Query Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2580, 460]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "Merge Embeddings",
+      "name": "Merge Embeddings",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [3000, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "function cosine(a, b) {\n  let dot = 0,\n    na = 0,\n    nb = 0;\n  for (let i = 0; i < a.length; i++) {\n    const x = a[i];\n    const y = b[i];\n    dot += x * y;\n    na += x * x;\n    nb += y * y;\n  }\n  if (!na || !nb) return 0;\n  return dot / (Math.sqrt(na) * Math.sqrt(nb));\n}\n\nconst docEmb = $json.doc_embeddings || [];\nconst qEmb = $json.query_embedding || [];\nconst texts = $json.texts || [];\nconst meta = $json.meta || [];\nconst question = $json.question;\nconst mode = $json.mode || 'emb';\n\nif (!docEmb.length || !qEmb.length) {\n  return [\n    {\n      json: {\n        question,\n        mode,\n        retrieval: { method: 'emb', top_k: 0, selected: [], retrieval_conf: 0 },\n      },\n    },\n  ];\n}\n\nconst scores = docEmb.map((e, i) => ({ idx: i, score: cosine(e, qEmb) }));\nconst maxS = Math.max(...scores.map((s) => s.score), 0);\nconst minS = Math.min(...scores.map((s) => s.score), 0);\nconst norm = scores\n  .map((s) => ({\n    ...s,\n    norm: maxS === minS ? 0 : (s.score - minS) / (maxS - minS),\n  }))\n  .sort((a, b) => b.norm - a.norm);\n\nconst top_k = Math.min(parseInt($env.TOP_K || '3', 10), texts.length);\nconst selected = norm.slice(0, top_k);\nconst selectedDocs = selected.map((s) => ({\n  id: meta[s.idx]?.id ?? String(s.idx),\n  title: meta[s.idx]?.title ?? '',\n  content: texts[s.idx],\n  score: s.norm,\n}));\n\nreturn [\n  {\n    json: {\n      question,\n      mode,\n      retrieval: {\n        method: 'emb',\n        top_k,\n        selected: selectedDocs,\n        retrieval_conf: selected.length ? selected[0].norm : 0,\n      },\n    },\n  },\n];\n"
+      },
+      "id": "Rank Embeddings",
+      "name": "Rank Embeddings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3220, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const question = $json.question;\nconst mode = $json.mode || 'bm25';\nconst retrieval = $json.retrieval || { selected: [], retrieval_conf: 0 };\n\nconst contexts = (retrieval.selected || [])\n  .map(\n    (d, i) =>\n      `KB[${i + 1}]: { \"id\": \"${(d.id || '').replace(/\"/g, '\\\\\"')}\", \"title\": \"${(d.title || '').replace(/\"/g, '\\\\\"')}\", \"content\": \"${(d.content || '').replace(/\"/g, '\\\\\"')}\" }`\n  )\n  .join(\"\\n\\n\");\n\nconst schema = {\n  type: 'object',\n  required: ['answer', 'confidence_score', 'sources'],\n  properties: {\n    answer: { type: 'string' },\n    confidence_score: { type: 'number', minimum: 0, maximum: 1 },\n    sources: { type: 'array', items: { type: 'string' }, minItems: 0 },\n  },\n};\n\nconst system = `\nYou are a Customer Support Knowledge Agent.\nRules:\n- Only answer using the provided KB contexts.\n- If contexts are insufficient, say you don't have enough info and suggest next steps or escalation. Do not invent facts.\n- Be concise and task-oriented for customers.\n- Output must be a single JSON object and valid JSON, no extra text.\n- Follow this JSON schema exactly (types and keys):\n${JSON.stringify(schema)}\n`;\n\nconst user = `\nUser question:\n\"${(question || '').replace(/\"/g, '\\\\\"')}\"\n\nRelevant contexts:\n${contexts}\n\nInstructions:\n1) Use only these contexts to answer.\n2) List sources as an array of KB ids you used (e.g., [\"KB001\"]).\n3) Set confidence_score between 0 and 1.\n4) If you cannot answer from the contexts, return a helpful message and set confidence_score <= 0.4.\n\nReturn only JSON.\n`;\n\nreturn [\n  {\n    json: {\n      messages: [\n        { role: 'system', content: system.trim() },\n        { role: 'user', content: user.trim() },\n      ],\n      question,\n      mode,\n      retrieval,\n      retrieval_conf: retrieval.retrieval_conf || 0,\n    },\n  },\n];\n"
+      },
+      "id": "Build Prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3440, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "return [\n  {\n    json: {\n      question: $json.question,\n      mode: $json.mode,\n      retrieval: $json.retrieval,\n      retrieval_conf: $json.retrieval_conf,\n    },\n  },\n];\n"
+      },
+      "id": "Extract Meta",
+      "name": "Extract Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3660, 520]
+    },
+    {
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "method": "POST",
+        "jsonParameters": true,
+        "responseFormat": "json",
+        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.OPENROUTER_API_KEY}}\",\n  \"HTTP-Referer\": \"{{$env.OPENROUTER_SITE_URL || 'http://localhost'}}\",\n  \"X-Title\": \"CS Knowledge Agent\",\n  \"Content-Type\": \"application/json\"\n}",
+        "bodyParametersJson": "={\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"messages\": {{$json.messages}},\n  \"temperature\": 0.2,\n  \"top_p\": 1\n}"
+      },
+      "id": "OpenRouter Chat",
+      "name": "OpenRouter Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3660, 200]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "id": "Merge LLM + Meta",
+      "name": "Merge LLM + Meta",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [3880, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "function clamp(x, lo, hi) {\n  return Math.max(lo, Math.min(hi, x));\n}\n\nconst retrieval_conf = Number($json.retrieval_conf ?? 0) || 0;\nconst question = $json.question;\nconst mode = $json.mode || 'bm25';\nconst retrieval_method = $json.retrieval?.method || null;\n\nconst raw = $json?.choices?.[0]?.message?.content;\nif (!raw || typeof raw !== 'string') {\n  return [\n    {\n      json: {\n        error: true,\n        message: 'LLM call failed or returned no content',\n        details: $json,\n        question,\n        mode,\n      },\n    },\n  ];\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    try {\n      parsed = JSON.parse(m[0]);\n    } catch (e2) {\n      return [\n        {\n          json: {\n            error: true,\n            message: 'LLM returned invalid JSON and repair failed.',\n            details: { raw },\n            question,\n            mode,\n          },\n        },\n      ];\n    }\n  } else {\n    return [\n      {\n        json: {\n          error: true,\n          message: 'LLM returned invalid JSON.',\n          details: { raw },\n          question,\n          mode,\n        },\n      },\n    ];\n  }\n}\n\nif (typeof parsed.answer !== 'string') {\n  return [\n    {\n      json: {\n        error: true,\n        message: \"Invalid schema: 'answer' must be string.\",\n        details: parsed,\n        question,\n        mode,\n      },\n    },\n  ];\n}\nif (\n  typeof parsed.confidence_score !== 'number' ||\n  Number.isNaN(parsed.confidence_score)\n) {\n  return [\n    {\n      json: {\n        error: true,\n        message: \"Invalid schema: 'confidence_score' must be number.\",\n        details: parsed,\n        question,\n        mode,\n      },\n    },\n  ];\n}\nif (!Array.isArray(parsed.sources)) {\n  return [\n    {\n      json: {\n        error: true,\n        message: \"Invalid schema: 'sources' must be array.\",\n        details: parsed,\n        question,\n        mode,\n      },\n    },\n  ];\n}\n\nconst blended =\n  0.6 * clamp(parsed.confidence_score, 0, 1) + 0.4 * clamp(retrieval_conf, 0, 1);\nparsed.confidence_score = clamp(Number(blended.toFixed(3)), 0, 1);\nparsed.sources = Array.from(\n  new Set((parsed.sources || []).map((s) => String(s).trim()).filter(Boolean))\n);\n\nreturn [\n  {\n    json: {\n      error: false,\n      result: parsed,\n      question,\n      mode,\n      retrieval_method,\n    },\n  },\n];\n"
+      },
+      "id": "Validate/Repair JSON",
+      "name": "Validate/Repair JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4100, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.error}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "IF Result Has Error?",
+      "name": "IF Result Has Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [4320, 360]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "return [\n  {\n    json: {\n      input: {\n        question: $json.question,\n        mode: $json.mode,\n      },\n      result: $json.result,\n    },\n  },\n];\n"
+      },
+      "id": "Shape Response",
+      "name": "Shape Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4540, 280]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const errMsg = $json.message || 'Agent failed to answer.';\nreturn [\n  {\n    json: {\n      error: true,\n      message: errMsg,\n      details: $json.details ?? null,\n      hint:\n        \"Ensure 'question' is provided and that KB URL/API credentials are valid.\",\n    },\n  },\n];\n"
+      },
+      "id": "Build Error Payload",
+      "name": "Build Error Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4540, 440]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Input", "type": "main", "index": 0 }]]
+    },
+    "Validate Input": {
+      "main": [[{ "node": "IF Valid?", "type": "main", "index": 0 }]]
+    },
+    "IF Valid?": {
+      "main": [
+        [
+          { "node": "IF Has KB URL?", "type": "main", "index": 0 },
+          { "node": "Merge Q+KB", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Build Error Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF Has KB URL?": {
+      "main": [
+        [{ "node": "Load KB JSON", "type": "main", "index": 0 }],
+        [{ "node": "Embedded KB", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load KB JSON": {
+      "main": [[{ "node": "Normalize KB", "type": "main", "index": 0 }]]
+    },
+    "Embedded KB": {
+      "main": [[{ "node": "Normalize KB", "type": "main", "index": 0 }]]
+    },
+    "Normalize KB": {
+      "main": [[{ "node": "Merge Q+KB", "type": "main", "index": 1 }]]
+    },
+    "Merge Q+KB": {
+      "main": [[{ "node": "IF Embeddings?", "type": "main", "index": 0 }]]
+    },
+    "IF Embeddings?": {
+      "main": [
+        [
+          { "node": "Prepare Embeddings", "type": "main", "index": 0 }
+        ],
+        [{ "node": "BM25 Rank", "type": "main", "index": 0 }]
+      ]
+    },
+    "BM25 Rank": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Prepare Embeddings": {
+      "main": [
+        [
+          { "node": "Doc Embeddings", "type": "main", "index": 0 },
+          { "node": "Query Embedding", "type": "main", "index": 0 },
+          { "node": "Merge Doc + Meta", "type": "main", "index": 1 }
+        ]
+      ]
+    },
+    "Doc Embeddings": {
+      "main": [[{ "node": "Merge Doc + Meta", "type": "main", "index": 0 }]]
+    },
+    "Merge Doc + Meta": {
+      "main": [[{ "node": "Wrap Doc+Meta", "type": "main", "index": 0 }]]
+    },
+    "Wrap Doc+Meta": {
+      "main": [[{ "node": "Merge Embeddings", "type": "main", "index": 0 }]]
+    },
+    "Query Embedding": {
+      "main": [[{ "node": "Wrap Query Embedding", "type": "main", "index": 0 }]]
+    },
+    "Wrap Query Embedding": {
+      "main": [[{ "node": "Merge Embeddings", "type": "main", "index": 1 }]]
+    },
+    "Merge Embeddings": {
+      "main": [[{ "node": "Rank Embeddings", "type": "main", "index": 0 }]]
+    },
+    "Rank Embeddings": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          { "node": "OpenRouter Chat", "type": "main", "index": 0 },
+          { "node": "Extract Meta", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "OpenRouter Chat": {
+      "main": [[{ "node": "Merge LLM + Meta", "type": "main", "index": 0 }]]
+    },
+    "Extract Meta": {
+      "main": [[{ "node": "Merge LLM + Meta", "type": "main", "index": 1 }]]
+    },
+    "Merge LLM + Meta": {
+      "main": [[{ "node": "Validate/Repair JSON", "type": "main", "index": 0 }]]
+    },
+    "Validate/Repair JSON": {
+      "main": [[{ "node": "IF Result Has Error?", "type": "main", "index": 0 }]]
+    },
+    "IF Result Has Error?": {
+      "main": [
+        [{ "node": "Build Error Payload", "type": "main", "index": 0 }],
+        [{ "node": "Shape Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Singapore"
+  }
+}
