@@ -1,0 +1,27 @@
+[
+  {
+    "id": "KB001",
+    "title": "Password Reset",
+    "content": "To reset your account password, click 'Forgot Password' on the login page, enter your registered email address, and follow the instructions in the reset email."
+  },
+  {
+    "id": "KB002",
+    "title": "Change Billing Address",
+    "content": "Log in to your account, go to 'Account Settings' > 'Billing', and click 'Edit Billing Address'. Save changes before exiting."
+  },
+  {
+    "id": "KB003",
+    "title": "Cancel Subscription",
+    "content": "To cancel your subscription, go to 'Account Settings' > 'Subscription', select 'Cancel Subscription', and confirm the cancellation. Your subscription will remain active until the end of the billing cycle."
+  },
+  {
+    "id": "KB004",
+    "title": "Refund Policy",
+    "content": "We offer a 30-day money-back guarantee on all annual subscriptions. Refunds are processed within 5-7 business days after approval."
+  },
+  {
+    "id": "KB005",
+    "title": "Two-Factor Authentication",
+    "content": "Enable 2FA by navigating to 'Account Settings' > 'Security', clicking 'Enable Two-Factor Authentication', and scanning the QR code with an authenticator app."
+  }
+]
